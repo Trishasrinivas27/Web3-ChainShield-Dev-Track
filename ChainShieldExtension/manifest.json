@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Smart Contract Scam Detector",
+  "version": "1.0",
+  "description": "Detects fake or scam contract addresses in real-time.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://*/*", "http://*/*"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
