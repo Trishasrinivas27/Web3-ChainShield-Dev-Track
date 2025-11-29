@@ -6,37 +6,27 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# ✅ Replace with your newly generated Etherscan V2 API key
-ETHERSCAN_API_KEY = "K32K1641JFXQKM7A9TUHF2TE4TBDDQAQ99"
+ETHERSCAN_API_KEY = "YOUR_API_KEY"  # replace with your V2 key
 
-# Select network
-NETWORK = "sepolia"  # change to "mainnet" or "goerli" if needed
-ETHERSCAN_API_URLS = {
-    "mainnet": "https://api.etherscan.io/api",
-    "sepolia": "https://api-sepolia.etherscan.io/api",
-    "goerli":  "https://api-goerli.etherscan.io/api"
-}
+SEPOLIA_CHAIN_ID = 11155111  # correct chainid
 
 @app.route("/")
 def home():
-    return jsonify({"status": "Backend running"})
+    return {"status": "Backend running"}
 
 @app.route("/scan_contract", methods=["POST"])
 def scan_contract():
     data = request.get_json()
-    if not data or "address" not in data:
-        return jsonify({"error": "No address provided"}), 400
-
-    address = data["address"].strip()
+    address = data.get("address", "").strip()
 
     source = fetch_source_code(address)
+
     if source is None:
-        # Graceful response for unverified contracts
         return jsonify({
             "address": address,
             "verified": False,
-            "issues": [],
             "risk": 1,
+            "issues": [],
             "error": "Contract not verified"
         }), 200
 
@@ -45,51 +35,48 @@ def scan_contract():
     return jsonify({
         "address": address,
         "verified": True,
-        "issues": analysis["issues"],
-        "risk": analysis["risk"]
+        "risk": analysis["risk"],
+        "issues": analysis["issues"]
     })
 
 def fetch_source_code(address):
-    url = ETHERSCAN_API_URLS.get(NETWORK, ETHERSCAN_API_URLS["sepolia"])
+    url = "https://api.etherscan.io/v2/api"
+
     params = {
+        "chainid": SEPOLIA_CHAIN_ID,
         "module": "contract",
         "action": "getsourcecode",
         "address": address,
         "apikey": ETHERSCAN_API_KEY
     }
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        r = response.json()
-    except Exception as e:
-        print(f"Error fetching source code: {e}")
+    resp = requests.get(url, params=params)
+    data = resp.json()
+    print("Etherscan V2 Response:", data)  # Debug
+
+    if data.get("status") != "1":
         return None
 
-    # ✅ Check for V2 API NOTOK message
-    if r.get("status") != "1" or r.get("message") != "OK":
-        print(f"Etherscan response NOTOK: {r}")
-        return None
+    source_code = data["result"][0].get("SourceCode", "")
 
-    source = r["result"][0].get("SourceCode", "")
-    if not source:
-        return None
-
-    return source
+    return source_code if source_code else None
 
 def analyze_source_code(src):
     issues = []
 
     if "require(msg.sender == owner" in src:
         issues.append("Honeypot: Only owner can transfer tokens")
-    if "allowance[msg.sender][spender] = 0" in src:
-        issues.append("Fake approval mechanism")
     if "mint(" in src:
         issues.append("Owner can mint unlimited tokens")
     if "drain(" in src:
-        issues.append("Owner drain / rugpull function detected")
+        issues.append("Rugpull drain function")
+    if "allowance[msg.sender][spender] = 0" in src:
+        issues.append("Fake approval pattern")
 
-    return {"risk": len(issues), "issues": issues}
+    return {
+        "risk": len(issues),
+        "issues": issues
+    }
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
