@@ -6,16 +6,15 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Replace with your Etherscan API key
+# ✅ Replace with your newly generated Etherscan V2 API key
 ETHERSCAN_API_KEY = "9JZGX7FM1NVI7XNPUFD3QWJ362ZAMSFB3R"
 
-# Optional: set default network (mainnet/sepolia/goerli)
-NETWORK = "sepolia"  # change to "mainnet" if needed
-
+# Select network
+NETWORK = "sepolia"  # change to "mainnet" or "goerli" if needed
 ETHERSCAN_API_URLS = {
     "mainnet": "https://api.etherscan.io/api",
     "sepolia": "https://api-sepolia.etherscan.io/api",
-    "goerli": "https://api-goerli.etherscan.io/api"
+    "goerli":  "https://api-goerli.etherscan.io/api"
 }
 
 @app.route("/")
@@ -32,7 +31,7 @@ def scan_contract():
 
     source = fetch_source_code(address)
     if source is None:
-        # Gracefully handle unverified contract
+        # Graceful response for unverified contracts
         return jsonify({
             "address": address,
             "verified": False,
@@ -60,12 +59,15 @@ def fetch_source_code(address):
     }
 
     try:
-        r = requests.get(url, params=params, timeout=10).json()
+        response = requests.get(url, params=params, timeout=10)
+        r = response.json()
     except Exception as e:
         print(f"Error fetching source code: {e}")
         return None
 
-    if r.get("status") != "1":
+    # ✅ Check for V2 API NOTOK message
+    if r.get("status") != "1" or r.get("message") != "OK":
+        print(f"Etherscan response NOTOK: {r}")
         return None
 
     source = r["result"][0].get("SourceCode", "")
@@ -77,19 +79,12 @@ def fetch_source_code(address):
 def analyze_source_code(src):
     issues = []
 
-    # HONEYPOT
     if "require(msg.sender == owner" in src:
         issues.append("Honeypot: Only owner can transfer tokens")
-
-    # FAKE APPROVAL
     if "allowance[msg.sender][spender] = 0" in src:
         issues.append("Fake approval mechanism")
-
-    # MINTING
     if "mint(" in src:
         issues.append("Owner can mint unlimited tokens")
-
-    # DRAIN FUNCTION
     if "drain(" in src:
         issues.append("Owner drain / rugpull function detected")
 
