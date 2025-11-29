@@ -6,7 +6,7 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-ETHERSCAN_API_KEY = "YOUR_API_KEY"  # replace with your V2 key
+ETHERSCAN_API_KEY = "K32K1641JFXQKM7A9TUHF2TE4TBDDQAQ99"  # replace with your V2 key
 
 SEPOLIA_CHAIN_ID = 11155111  # correct chainid
 
