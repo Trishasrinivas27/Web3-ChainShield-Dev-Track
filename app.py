@@ -7,7 +7,7 @@ app = Flask(__name__)
 CORS(app)
 
 # ✅ Replace with your newly generated Etherscan V2 API key
-ETHERSCAN_API_KEY = "9JZGX7FM1NVI7XNPUFD3QWJ362ZAMSFB3R"
+ETHERSCAN_API_KEY = "K32K1641JFXQKM7A9TUHF2TE4TBDDQAQ99"
 
 # Select network
 NETWORK = "sepolia"  # change to "mainnet" or "goerli" if needed
