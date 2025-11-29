@@ -16,7 +16,10 @@ def home():
 @app.route("/scan_contract", methods=["POST"])
 def scan_contract():
     data = request.get_json()
-    address = data["address"]
+    address = data.get("address")
+
+    if not address:
+        return jsonify({"error": "No contract address provided"}), 400
 
     source = fetch_source_code(address)
     if source is None:
@@ -41,11 +44,11 @@ def fetch_source_code(address):
 
     r = requests.get(url).json()
 
-    if r["status"] != "1":
+    if r.get("status") != "1":
         return None
 
     source = r["result"][0]["SourceCode"]
-    if source == "":
+    if not source:
         return None
 
     return source
@@ -74,4 +77,4 @@ def analyze_source_code(src):
 
 
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
