@@ -6,7 +6,7 @@ document.getElementById("scanBtn").addEventListener("click", () => {
         return;
     }
 
-    fetch("https://your-render-backend.onrender.com/scan_contract", {
+    fetch("https://web3-chainshield-dev-track-production.up.railway.app/scan_contract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address })
