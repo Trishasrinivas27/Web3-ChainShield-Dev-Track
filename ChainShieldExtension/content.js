@@ -1,80 +1,77 @@
 console.log("🔥 ChainShield content script loaded");
 
-const ETH_ADDRESS_REGEX = /0x[a-fA-F0-9]{40}/g;
+const ADDRESS_REGEX = /0x[a-fA-F0-9]{40}/g;
 const scanned = new Set();
 
-// =================== GET ALL TEXT NODES ===================
-function getAllTextNodes() {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode.nodeValue);
-    return nodes;
-}
-
-// =================== SCAN PAGE ===================
+// ================= SCAN PAGE =================
 function scanPage() {
-    const texts = getAllTextNodes();
-    const matches = texts.flatMap(t => (t.match(ETH_ADDRESS_REGEX) || []));
-    const uniqueMatches = [...new Set(matches)];
+    const text = document.body.innerText || "";
+    const found = text.match(ADDRESS_REGEX) || [];
 
-    if (uniqueMatches.length === 0) return;
+    const addresses = [...new Set(found.map(a => a.toLowerCase()))];
 
-    console.log("🔎 Found addresses:", uniqueMatches);
-
-    uniqueMatches.forEach(address => {
+    addresses.forEach(address => {
         if (scanned.has(address)) return;
         scanned.add(address);
-        console.log("📡 Checking address:", address);
 
-        // Send to background script
-        chrome.runtime.sendMessage(
-            { type: "CHECK_ADDRESS", address },
-            response => {
-                if (!response || !response.status) return;
+        console.log("📡 Checking:", address);
 
-                if (response.status === "MALICIOUS") {
-                    console.warn("🚨 MALICIOUS CONTRACT:", address, response.reason);
-                    highlightRed(address);
-                } else if (response.status === "SAFE") {
-                    console.log("✅ SAFE CONTRACT:", address);
-                } else if (response.status === "NOT_VERIFIED") {
-                    console.log("ℹ NOT VERIFIED:", address);
-                }
+        fetch("https://web3-chainshield-dev-track-production.up.railway.app/check_address", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (!data || !data.status) {
+                console.warn("❌ Invalid backend response:", address);
+                return;
             }
-        );
+
+            // 🚨 MALICIOUS
+            if (data.status === "MALICIOUS") {
+                console.warn(
+                    "🚨 MALICIOUS CONTRACT:",
+                    address,
+                    "\nReasons:",
+                    data.issues
+                );
+                highlightRed(address);
+            }
+
+            // ✅ SAFE
+            else if (data.status === "SAFE") {
+                console.log("✅ SAFE CONTRACT:", address);
+            }
+
+            // ℹ NOT VERIFIED
+            else if (data.status === "NOT_VERIFIED") {
+                console.log("ℹ NOT VERIFIED:", address);
+            }
+        })
+        .catch(err => console.error("Backend error:", err));
     });
 }
 
-// =================== HIGHLIGHT MALICIOUS ===================
+// ================= RED HIGHLIGHT =================
 function highlightRed(address) {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
         const node = walker.currentNode;
         if (!node.nodeValue.includes(address)) continue;
 
-        const parent = node.parentNode;
-        const parts = node.nodeValue.split(address);
+        const span = document.createElement("span");
+        span.textContent = address;
+        span.style.background = "red";
+        span.style.color = "white";
+        span.style.fontWeight = "bold";
+        span.style.padding = "2px 4px";
+        span.style.borderRadius = "4px";
 
-        for (let i = 0; i < parts.length - 1; i++) {
-            parent.insertBefore(document.createTextNode(parts[i]), node);
-
-            const span = document.createElement("span");
-            span.textContent = address;
-            span.style.backgroundColor = "red";
-            span.style.color = "white";
-            span.style.fontWeight = "bold";
-            span.style.padding = "2px 4px";
-            span.style.borderRadius = "3px";
-
-            parent.insertBefore(span, node);
-        }
-
-        parent.insertBefore(document.createTextNode(parts[parts.length - 1]), node);
-        parent.removeChild(node);
+        node.parentNode.replaceChild(span, node);
     }
 }
 
-// =================== START SCANNING ===================
+// ================= START =================
 scanPage();
-setInterval(scanPage, 4000); // scan every 4 seconds for dynamic content
+setInterval(scanPage, 5000);
