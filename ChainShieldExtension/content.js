@@ -1,3 +1,5 @@
+console.log("🔥 ChainShield content script loaded");
+
 const ETH_ADDRESS_REGEX = /0x[a-fA-F0-9]{40}/g;
 const scanned = new Set();
 
@@ -14,12 +16,17 @@ function scanPage() {
             response => {
                 if (!response || !response.status) return;
 
+                // 🔴 MALICIOUS
                 if (response.status === "MALICIOUS") {
-                    console.warn("⚠ MALICIOUS:", address);
-                    highlight(address);
-                } else if (response.status === "SAFE") {
-                    console.log("✔ SAFE:", address);
-                } else {
+                    console.warn("🚨 MALICIOUS CONTRACT:", address, response.reason);
+                    highlightRed(address);
+                }
+                // 🟢 SAFE
+                else if (response.status === "SAFE") {
+                    console.log("✅ SAFE CONTRACT:", address);
+                }
+                // ⚪ NOT VERIFIED
+                else if (response.status === "NOT_VERIFIED") {
                     console.log("ℹ NOT VERIFIED:", address);
                 }
             }
@@ -27,7 +34,7 @@ function scanPage() {
     });
 }
 
-function highlight(address) {
+function highlightRed(address) {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
         const node = walker.currentNode;
@@ -35,7 +42,7 @@ function highlight(address) {
 
         const span = document.createElement("span");
         span.textContent = address;
-        span.style.background = "red";
+        span.style.backgroundColor = "red";
         span.style.color = "white";
         span.style.fontWeight = "bold";
         span.style.padding = "2px 4px";
@@ -45,4 +52,4 @@ function highlight(address) {
 }
 
 scanPage();
-setInterval(scanPage, 5000);
+setInterval(scanPage, 4000);
