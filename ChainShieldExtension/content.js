@@ -23,7 +23,7 @@ function scanPage() {
 
 // ================== BACKEND CHECK ==================
 function checkAddress(address) {
-    fetch("https://web3-chainshield-dev-track-production.up.railway.app", {
+    fetch("https://web3-chainshield-dev-track-production.up.railway.app/check_address", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address })
