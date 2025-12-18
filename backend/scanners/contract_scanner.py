@@ -4,91 +4,84 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ FULL CORS SUPPORT (IMPORTANT)
+# ✅ IMPORTANT: Allow all origins (needed for Chrome extensions)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"
 
-# ================== SCAM DETECTION ==================
-def detect_scams(source_code):
-    issues = []
 
-    if "transfer" in source_code and ("onlyowner" in source_code or "msg.sender==owner" in source_code):
-        issues.append("Honeypot: only owner can transfer tokens")
-
-    if "function mint" in source_code and ("onlyowner" in source_code or "msg.sender==owner" in source_code):
-        issues.append("Unlimited mint by owner")
-
-    if "selfdestruct" in source_code:
-        issues.append("Selfdestruct present")
-
-    if "emergencywithdraw" in source_code or "rugpull" in source_code:
-        issues.append("Rugpull / emergency withdraw function")
-
-    return issues
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "Backend running"})
 
 
-# ================== CONTRACT SCANNER ==================
-def scan_contract(address):
+@app.route("/scan_contract", methods=["POST"])
+def scan_contract():
+    data = request.get_json(force=True)
+    address = data.get("address")
+
+    if not address:
+        return jsonify({"error": "No contract address provided"}), 400
+
+    source = fetch_source_code(address)
+    if source is None:
+        return jsonify({"risk": "UNKNOWN", "issues": ["Contract not verified on Etherscan"]})
+
+    analysis = analyze_source_code(source)
+
+    return jsonify({
+        "address": address,
+        "verified": True,
+        "issues": analysis["issues"],
+        "risk": analysis["risk"]
+    })
+
+
+def fetch_source_code(address):
     url = (
-        "https://api.etherscan.io/api"
+        "https://api-sepolia.etherscan.io/api"
         "?module=contract"
         "&action=getsourcecode"
         f"&address={address}"
         f"&apikey={ETHERSCAN_API_KEY}"
     )
 
-    try:
-        res = requests.get(url, timeout=10).json()
+    response = requests.get(url, timeout=10).json()
 
-        # ❌ Not verified
-        if res.get("status") != "1" or not res.get("result"):
-            return {
-                "status": "NOT_VERIFIED",
-                "issues": []
-            }
+    if response.get("status") != "1":
+        return None
 
-        source_code = (res["result"][0].get("SourceCode") or "").lower()
+    source = response["result"][0].get("SourceCode")
+    if not source:
+        return None
 
-        issues = detect_scams(source_code)
-
-        if issues:
-            return {
-                "status": "MALICIOUS",
-                "issues": issues
-            }
-
-        return {
-            "status": "SAFE",
-            "issues": []
-        }
-
-    except Exception as e:
-        print("Etherscan error:", e)
-        return {
-            "status": "ERROR",
-            "issues": []
-        }
+    return source
 
 
-# ================== API ROUTE ==================
-@app.route("/check_address", methods=["POST", "OPTIONS"])
-def check_address():
+def analyze_source_code(src):
+    issues = []
 
-    # ✅ CORS PREFLIGHT FIX
-    if request.method == "OPTIONS":
-        return "", 200
+    # 🚨 Honeypot
+    if "require(msg.sender == owner" in src:
+        issues.append("Honeypot: Only owner can transfer tokens")
 
-    data = request.get_json()
-    address = data.get("address", "").strip().lower()
+    # 🚨 Fake approve
+    if "allowance[msg.sender][spender] = 0" in src:
+        issues.append("Fake approval mechanism")
 
-    if not address:
-        return jsonify({"status": "ERROR", "issues": []})
+    # 🚨 Unlimited mint
+    if "mint(" in src:
+        issues.append("Owner can mint unlimited tokens")
 
-    result = scan_contract(address)
-    return jsonify(result)
+    # 🚨 Rug pull
+    if "drain(" in src:
+        issues.append("Owner drain / rug pull function detected")
+
+    return {
+        "risk": len(issues),
+        "issues": issues
+    }
 
 
-# ================== RUN ==================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
