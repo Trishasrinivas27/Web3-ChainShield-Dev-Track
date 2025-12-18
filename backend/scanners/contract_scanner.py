@@ -1,53 +1,191 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 
-ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"   # ← Replace this
+app = Flask(__name__)
+CORS(app)
+ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"
 
-def get_source_code(address):
+# ================== FETCH CONTRACT INFO ==================
+def get_contract_info(address):
     url = (
-        f"https://api.etherscan.io/api"
-        f"?module=contract&action=getsourcecode"
-        f"&address={address}&apikey={ETHERSCAN_API_KEY}"
+        "https://api.etherscan.io/api"
+        "?module=contract"
+        "&action=getsourcecode"
+        f"&address={address}"
+        f"&apikey={ETHERSCAN_API_KEY}"
     )
-    res = requests.get(url).json()
     try:
-        return res["result"][0]["SourceCode"]
-    except:
-        return None
+        res = requests.get(url, timeout=10).json()
+        if res.get("status") != "1" or not res.get("result"):
+            return {"verified": False, "source_code": ""}
+        result = res["result"][0]
+        return {"verified": True, "source_code": (result.get("SourceCode") or "").lower()}
+    except Exception as e:
+        print("Etherscan error:", e)
+        return {"verified": False, "source_code": ""}
 
-
+# ================== DETECT MALICIOUS PATTERNS ==================
 def detect_scams(source_code):
-    if not source_code or source_code.strip() == "":
-        return {"risk": "UNKNOWN", "reason": "No source code found"}
+    issues = []
+    if "transfer" in source_code and ("onlyowner" in source_code or "msg.sender==owner" in source_code):
+        issues.append("Honeypot: only owner can transfer tokens")
+    if "function mint" in source_code and ("onlyowner" in source_code or "msg.sender==owner" in source_code):
+        issues.append("Owner can mint unlimited tokens")
+    rug_keywords = ["function drain", "withdrawall", "rugpull", "emergencywithdraw", "selfdestruct"]
+    for word in rug_keywords:
+        if word in source_code:
+            issues.append("Rugpull / drain capability")
+            break
+    if "allowance[msg.sender][spender]=0" in source_code:
+        issues.append("Fake approval pattern")
+    return issues
 
-    findings = []
-
-    # Honeypot: transfer blocked
-    if "require(msg.sender == owner" in source_code and "transfer" in source_code:
-        findings.append("Honeypot: Only owner can transfer")
-
-    # Fake approvals
-    if "allowance[msg.sender][spender] = 0" in source_code:
-        findings.append("Fake approve function")
-
-    # Owner-only mint
-    if "function mint" in source_code and "owner" in source_code:
-        findings.append("Owner-only unlimited mint")
-
-    # Drain function (rug pull)
-    if "function drain" in source_code:
-        findings.append("Owner drain function (rug pull)")
-
-    if len(findings) == 0:
-        return {"risk": "LOW", "reason": "No scam patterns detected"}
-
-    return {"risk": "HIGH", "reason": ", ".join(findings)}
-    
-
+# ================== MAIN SCANNER ==================
 def scan_contract(address):
-    code = get_source_code(address)
-    return detect_scams(code)
+    address = address.lower()
+    info = get_contract_info(address)
 
+    if not info["verified"]:
+        return {
+            "address": address,
+            "status": "NOT_VERIFIED",
+            "is_malicious": False,
+            "risk": 0,
+            "issues": [],
+            "verified": False,
+            "reason": "Contract source code not verified on Etherscan"
+        }
+
+    issues = detect_scams(info["source_code"])
+    risk = len(issues)
+
+    if risk > 0:
+        return {
+            "address": address,
+            "status": "MALICIOUS",
+            "is_malicious": True,
+            "risk": risk,
+            "issues": issues,
+            "verified": True,
+            "reason": ", ".join(issues)
+        }
+
+    return {
+        "address": address,
+        "status": "SAFE",
+        "is_malicious": False,
+        "risk": 0,
+        "issues": [],
+        "verified": True,
+        "reason": "Verified contract with no malicious patterns"
+    }
+
+# ================== FLASK ROUTE ==================
+@app.route("/check_address", methods=["POST"])
+def check_address():
+    try:
+        data = request.get_json(force=True)
+        address = data.get("address", "").strip()
+        if not address:
+            return jsonify({"error": "No address provided"}), 400
+
+        result = scan_contract(address)
+        return jsonify(result)
+
+    except Exception as e:
+        print("Backend error:", e)
+        return jsonify({"error": "Backend error"}), 500
+
+# ================== RUN LOCAL ==================
 if __name__ == "__main__":
-    test_address = "0x9bf8a78714cbc6fdce0b75b4ff6a920291f96262"
-    print(scan_contract(test_address))
+    app.run(host="0.0.0.0", port=5000, debug=True)
 
+
+
+# import requests
+
+# ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"
+
+# def fetch_source_code(address):
+#     url = f"https://api.etherscan.io/api?module=contract&action=getsourcecode&address={address}&apikey={ETHERSCAN_API_KEY}"
+#     res = requests.get(url, timeout=10).json()
+#     return res.get("result", [{}])[0]
+
+# def get_verified_source(address):
+#     result = fetch_source_code(address)
+#     source_code = result.get("SourceCode", "")
+#     contract_name = result.get("ContractName", "")
+#     is_proxy = result.get("Proxy") == "1"
+#     implementation = result.get("Implementation")
+
+#     # If proxy, fetch implementation source
+#     if is_proxy and implementation:
+#         impl_result = fetch_source_code(implementation)
+#         source_code = impl_result.get("SourceCode", "")
+#         contract_name = impl_result.get("ContractName", "")
+
+#     verified = bool(source_code.strip()) or bool(contract_name.strip())
+#     return verified, source_code.lower() if source_code else ""
+
+# def detect_scams(source_code):
+#     issues = []
+
+#     if "transfer" in source_code and ("onlyowner" in source_code or "msg.sender==owner" in source_code):
+#         issues.append("Honeypot: only owner can transfer tokens")
+#     if "function mint" in source_code and ("onlyowner" in source_code or "msg.sender==owner" in source_code):
+#         issues.append("Owner can mint unlimited tokens")
+#     for word in ["function drain", "withdrawall", "rugpull", "emergencywithdraw", "selfdestruct"]:
+#         if word in source_code:
+#             issues.append("Rugpull / drain capability")
+#             break
+#     if "allowance[msg.sender][spender]=0" in source_code:
+#         issues.append("Fake approval pattern")
+
+#     return issues
+
+# def scan_contract(address):
+#     address = address.lower()
+#     verified, source_code = get_verified_source(address)
+#     if not verified:
+#         return {
+#             "address": address,
+#             "status": "NOT_VERIFIED",
+#             "is_malicious": False,
+#             "risk": 0,
+#             "issues": [],
+#             "verified": False,
+#             "reason": "Contract source code not verified on Etherscan"
+#         }
+
+#     issues = detect_scams(source_code)
+#     risk = len(issues)
+
+#     if risk > 0:
+#         return {
+#             "address": address,
+#             "status": "MALICIOUS",
+#             "is_malicious": True,
+#             "risk": risk,
+#             "issues": issues,
+#             "verified": True,
+#             "reason": ", ".join(issues)
+#         }
+
+#     return {
+#         "address": address,
+#         "status": "SAFE",
+#         "is_malicious": False,
+#         "risk": 0,
+#         "issues": [],
+#         "verified": True,
+#         "reason": "Verified contract with no malicious patterns"
+#     }
+
+# # ===== LOCAL TEST =====
+# if __name__ == "__main__":
+#     while True:
+#         addr = input("Enter contract address (or 'exit'): ").strip()
+#         if addr.lower() == "exit":
+#             break
+#         print(scan_contract(addr))

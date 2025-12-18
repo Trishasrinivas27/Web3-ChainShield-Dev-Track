@@ -1,51 +1,19 @@
-function showWarningPopup(address, riskScore) {
-    let status = "";
-    if (riskScore >= 71) status = "danger";
-    else if (riskScore >= 41) status = "medium";
-    else status = "safe";
+// ================== ETH ADDRESS REGEX ==================
+const ETH_ADDRESS_REGEX = /0x[a-fA-F0-9]{40}/g;
 
-    const popup = document.createElement("div");
-    popup.className = `chainshield-popup ${status}`;
+// ================== SCANNED CACHE ==================
+const scannedAddresses = new Set();
 
-    popup.innerHTML = `
-        <div class="cs-title">
-            ${status === "danger" ? "🔴 High-Risk Contract!" :
-             status === "medium" ? "🟡 Medium Risk Detected" :
-             "🟢 Safe Contract Detected"}
-        </div>
-
-        <div class="cs-body">
-            <b>Address:</b> ${address.slice(0, 10)}…<br>
-            <b>Risk Score:</b> ${riskScore}%
-        </div>
-
-        <button class="cs-close-btn">✖</button>
-    `;
-
-    document.body.appendChild(popup);
-
-    popup.querySelector(".cs-close-btn").onclick = () => popup.remove();
-
-    setTimeout(() => popup.remove(), 6000);
-}
-
-// Regex to match Ethereum addresses
-const regex = /0x[a-fA-F0-9]{40}/g;
-
-// Keep track of already scanned addresses to avoid repeated requests
-let scannedAddresses = new Set();
-
-// Function to scan the visible page text
+// ================== PAGE SCANNER ==================
 function scanPage() {
     const text = document.body.innerText;
-    const matches = text.match(regex);
+    const matches = text.match(ETH_ADDRESS_REGEX);
 
     if (!matches) return;
 
-    // Deduplicate
-    const uniqueMatches = [...new Set(matches)];
+    const uniqueAddresses = [...new Set(matches)];
 
-    uniqueMatches.forEach(address => {
+    uniqueAddresses.forEach(address => {
         if (!scannedAddresses.has(address)) {
             scannedAddresses.add(address);
             checkAddress(address);
@@ -53,68 +21,80 @@ function scanPage() {
     });
 }
 
-// Function to send address to backend
+// ================== BACKEND CHECK ==================
 function checkAddress(address) {
-    fetch("https://web3-chainshield-dev-track-production.up.railway.app/scan_contract", {
+    fetch("https://web3-chainshield-dev-track-production.up.railway.app", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address })
     })
     .then(res => res.json())
     .then(data => {
-        if (data.error) {
-            console.log(`Error scanning ${address}: ${data.error}`);
-            showWarningPopup(address, 0); // Show safe/neutral popup for non-verified
+        // ✅ Ensure response is valid
+        if (!data || !data.status) {
+            console.warn("Invalid backend response for:", address);
             return;
         }
 
-        const riskScore = data.risk || 0;
-
-        // 🔥 Show the beautiful popup UI
-        showWarningPopup(address, riskScore);
-
-        if (riskScore > 0) {
-            console.warn(`⚠ Scam detected: ${address}`, data.issues);
-
-            // Your own highlight function (keep it)
+        // 🔴 Malicious verified → highlight RED
+        if (data.status === "MALICIOUS") {
+            console.warn("⚠ MALICIOUS CONTRACT:", address, data.reason);
             highlightAddress(address);
-
-        } else {
-            console.log(`✔ Safe contract: ${address}`);
+        }
+        // 🟢 Safe verified → console log only
+        else if (data.status === "SAFE") {
+            console.log("✔ SAFE CONTRACT:", address);
+        }
+        // ⚪ Not verified → console log only
+        else if (data.status === "NOT_VERIFIED") {
+            console.log("ℹ NOT VERIFIED:", address);
         }
     })
     .catch(err => {
-        console.error("Fetch error:", err);
-        showWarningPopup(address, 0); // fallback popup
+        console.error("Backend error (ignored):", err);
     });
 }
 
-
-// Optional: highlight risky addresses on the page
+// ================== HIGHLIGHT MALICIOUS ==================
 function highlightAddress(address) {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    while(walker.nextNode()) {
+    const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
+
+    while (walker.nextNode()) {
         const node = walker.currentNode;
-        if(node.nodeValue.includes(address)) {
+
+        if (!node.nodeValue.includes(address)) continue;
+
+        const parent = node.parentNode;
+        const parts = node.nodeValue.split(address);
+
+        for (let i = 0; i < parts.length - 1; i++) {
+            parent.insertBefore(document.createTextNode(parts[i]), node);
+
             const span = document.createElement("span");
+            span.textContent = address;
             span.style.backgroundColor = "red";
             span.style.color = "white";
-            span.textContent = address;
+            span.style.padding = "2px 4px";
+            span.style.borderRadius = "4px";
+            span.style.fontWeight = "bold";
 
-            const parent = node.parentNode;
-            const parts = node.nodeValue.split(address);
-            for(let i = 0; i < parts.length - 1; i++) {
-                parent.insertBefore(document.createTextNode(parts[i]), node);
-                parent.insertBefore(span.cloneNode(true), node);
-            }
-            parent.insertBefore(document.createTextNode(parts[parts.length - 1]), node);
-            parent.removeChild(node);
+            parent.insertBefore(span, node);
         }
+
+        parent.insertBefore(
+            document.createTextNode(parts[parts.length - 1]),
+            node
+        );
+
+        parent.removeChild(node);
     }
 }
 
-// Run scan on page load
+// ================== START ==================
 scanPage();
-
-// Optional: rescan periodically in case dynamic content is loaded
-setInterval(scanPage, 5000); // every 5 seconds
+setInterval(scanPage, 5000); // support dynamic content
