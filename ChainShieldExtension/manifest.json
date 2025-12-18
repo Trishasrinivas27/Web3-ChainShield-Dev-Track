@@ -2,18 +2,20 @@
   "manifest_version": 3,
   "name": "Smart Contract Scam Detector",
   "version": "1.0",
-  "permissions": ["storage"],
+  "description": "Detects fake or scam contract addresses in real-time.",
+
+  "permissions": ["activeTab", "scripting", "storage"],
+
   "host_permissions": [
-    "https://web3-chainshield-dev-track-production.up.railway.app/*"
+    "https://*/*",
+    "http://*/*"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
+
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     }
   ]
 }

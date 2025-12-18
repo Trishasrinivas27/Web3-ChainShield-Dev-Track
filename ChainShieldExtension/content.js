@@ -16,46 +16,41 @@ function scanPage() {
 
         console.log("📡 Checking:", address);
 
-        fetch("https://web3-chainshield-dev-track-production.up.railway.app/check_address", {
+        fetch("https://web3-chainshield-dev-track-production.up.railway.app/scan_contract", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ address })
         })
         .then(res => res.json())
         .then(data => {
-            if (!data || !data.status) {
-                console.warn("❌ Invalid backend response:", address);
+            console.log("📥 Backend response:", data);
+
+            // ❌ Not verified
+            if (data.error) {
+                console.log("ℹ NOT VERIFIED:", address);
                 return;
             }
 
             // 🚨 MALICIOUS
-            if (data.status === "MALICIOUS") {
-                console.warn(
-                    "🚨 MALICIOUS CONTRACT:",
-                    address,
-                    "\nReasons:",
-                    data.issues
-                );
+            if (data.risk > 0) {
+                console.warn("🚨 MALICIOUS CONTRACT:", address);
+                console.warn("Issues:", data.issues);
                 highlightRed(address);
             }
 
             // ✅ SAFE
-            else if (data.status === "SAFE") {
+            else {
                 console.log("✅ SAFE CONTRACT:", address);
             }
-
-            // ℹ NOT VERIFIED
-            else if (data.status === "NOT_VERIFIED") {
-                console.log("ℹ NOT VERIFIED:", address);
-            }
         })
-        .catch(err => console.error("Backend error:", err));
+        .catch(err => console.error("❌ Backend error:", err));
     });
 }
 
 // ================= RED HIGHLIGHT =================
 function highlightRed(address) {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+
     while (walker.nextNode()) {
         const node = walker.currentNode;
         if (!node.nodeValue.includes(address)) continue;
