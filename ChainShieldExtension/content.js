@@ -48,22 +48,37 @@ function scanPage() {
 }
 
 // ================= RED HIGHLIGHT =================
-function highlightRed(address) {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+ function highlightRed(address) {
+    const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
 
     while (walker.nextNode()) {
         const node = walker.currentNode;
+
         if (!node.nodeValue.includes(address)) continue;
 
         const span = document.createElement("span");
         span.textContent = address;
-        span.style.background = "red";
+
+        // 🔴 RED HIGHLIGHT STYLE
+        span.style.backgroundColor = "red";
         span.style.color = "white";
         span.style.fontWeight = "bold";
-        span.style.padding = "2px 4px";
-        span.style.borderRadius = "4px";
+        span.style.padding = "2px 6px";
+        span.style.borderRadius = "6px";
 
-        node.parentNode.replaceChild(span, node);
+        const parent = node.parentNode;
+        const parts = node.nodeValue.split(address);
+
+        parent.insertBefore(document.createTextNode(parts[0]), node);
+        parent.insertBefore(span, node);
+        parent.insertBefore(document.createTextNode(parts[1]), node);
+
+        parent.removeChild(node);
     }
 }
 
