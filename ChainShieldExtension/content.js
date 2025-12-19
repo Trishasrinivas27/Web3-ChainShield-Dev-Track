@@ -56,7 +56,7 @@ function scanPage() {
         false
     );
 
-    while (walker.nextNode()) {
+    while  (walker.nextNode()) {
         const node = walker.currentNode;
 
         if (!node.nodeValue.includes(address)) continue;
@@ -66,7 +66,7 @@ function scanPage() {
 
         // 🔴 RED HIGHLIGHT STYLE
         span.style.backgroundColor = "red";
-        span.style.color = "white";
+        span.style.color = "red";
         span.style.fontWeight = "bold";
         span.style.padding = "2px 6px";
         span.style.borderRadius = "6px";
@@ -84,4 +84,4 @@ function scanPage() {
 
 // ================= START =================
 scanPage();
-setInterval(scanPage, 5000);
+setInterval(scanPage, 5);
