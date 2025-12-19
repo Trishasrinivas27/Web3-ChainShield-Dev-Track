@@ -93,113 +93,96 @@ import requests
 
 app = Flask(__name__)
 
-# ✅ Allow Chrome Extension + any site
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=True
+)
 
 ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"
 
 
-# ================= HOME =================
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "Backend running"})
 
 
-# ================= MAIN API =================
-@app.route("/check_address", methods=["POST"])
-def check_address():
-    data = request.get_json(force=True)
+@app.route("/scan_contract", methods=["POST", "OPTIONS"])
+def scan_contract():
 
+    # ✅ Handle CORS preflight
+    if request.method == "OPTIONS":
+        response = jsonify({"status": "ok"})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        return response
+
+    data = request.get_json(force=True)
     address = data.get("address")
-    network = data.get("network", "mainnet")  # default mainnet
 
     if not address:
-        return jsonify({
-            "status": "ERROR",
-            "message": "No address provided"
-        }), 400
+        return jsonify({"error": "No contract address provided"}), 400
 
-    source = fetch_source_code(address, network)
-
-    # ❌ Not verified OR wallet address
-    if not source:
+    source = fetch_source_code(address)
+    if source is None:
         return jsonify({
-            "address": address,
-            "status": "NOT_VERIFIED",
-            "issues": [],
-            "risk": 0
+            "verified": False,
+            "risk": "UNKNOWN",
+            "issues": ["Contract not verified on Etherscan"]
         })
 
-    issues = analyze_source_code(source)
+    analysis = analyze_source_code(source)
 
-    # 🚨 Scam detected
-    if issues:
-        return jsonify({
-            "address": address,
-            "status": "MALICIOUS",
-            "issues": issues,
-            "risk": len(issues)
-        })
-
-    # ✅ Safe verified contract
     return jsonify({
         "address": address,
-        "status": "SAFE",
-        "issues": [],
-        "risk": 0
+        "verified": True,
+        "risk": analysis["risk"],
+        "issues": analysis["issues"]
     })
 
 
-# ================= FETCH SOURCE =================
-def fetch_source_code(address, network):
-    if network == "sepolia":
-        base_url = "https://api-sepolia.etherscan.io/api"
-    else:
-        base_url = "https://api.etherscan.io/api"
-
+def fetch_source_code(address):
     url = (
-        f"{base_url}"
-        f"?module=contract"
-        f"&action=getsourcecode"
+        "https://api-sepolia.etherscan.io/api"
+        "?module=contract"
+        "&action=getsourcecode"
         f"&address={address}"
         f"&apikey={ETHERSCAN_API_KEY}"
     )
 
-    try:
-        response = requests.get(url, timeout=10).json()
-    except Exception:
-        return None
+    response = requests.get(url, timeout=10).json()
 
     if response.get("status") != "1":
         return None
 
     source = response["result"][0].get("SourceCode")
-    return source if source else None
+    if not source:
+        return None
+
+    return source
 
 
-# ================= ANALYSIS =================
 def analyze_source_code(src):
     issues = []
 
-    # 🚨 Honeypot
     if "require(msg.sender == owner" in src:
-        issues.append("Honeypot: only owner can transfer tokens")
+        issues.append("Honeypot: Only owner can transfer tokens")
 
-    # 🚨 Fake approve
     if "allowance[msg.sender][spender] = 0" in src:
         issues.append("Fake approval mechanism")
 
-    # 🚨 Unlimited mint
     if "mint(" in src:
-        issues.append("Unlimited minting by owner")
+        issues.append("Owner can mint unlimited tokens")
 
-    # 🚨 Rug pull
     if "drain(" in src:
-        issues.append("Owner drain / rug pull function")
+        issues.append("Owner drain / rug pull detected")
 
-    return issues
+    return {
+        "risk": len(issues),
+        "issues": issues
+    }
 
 
-# ================= RUN =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
