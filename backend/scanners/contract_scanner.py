@@ -88,99 +88,65 @@
 
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"
 
-# ✅ CORS FIX (GLOBAL – WORKS 100%)
-@app.after_request
-def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
-
-
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
     return jsonify({"status": "Backend running"})
 
-
-@app.route("/scan_contract", methods=["POST", "OPTIONS"])
+@app.route("/scan_contract", methods=["POST"])
 def scan_contract():
-
-    # ✅ Handle preflight
-    if request.method == "OPTIONS":
-        return jsonify({"ok": True})
-
-    data = request.get_json(force=True)
-    address = data.get("address")
+    data = request.get_json()
+    address = data.get("address") if data else None
 
     if not address:
-        return jsonify({
-            "verified": False,
-            "risk": "UNKNOWN",
-            "issues": ["No contract address provided"]
-        })
+        return jsonify({"error": "No address provided"}), 400
 
     source = fetch_source_code(address)
 
-    if source is None:
+    if not source:
         return jsonify({
             "verified": False,
             "risk": "UNKNOWN",
-            "issues": ["Contract not verified on Etherscan"]
+            "issues": ["Contract not verified"]
         })
 
-    analysis = analyze_source_code(source)
+    issues = analyze_source_code(source)
 
     return jsonify({
-        "address": address,
         "verified": True,
-        "risk": analysis["risk"],
-        "issues": analysis["issues"]
+        "risk": len(issues),
+        "issues": issues
     })
-
 
 def fetch_source_code(address):
     url = (
         "https://api-sepolia.etherscan.io/api"
-        "?module=contract"
-        "&action=getsourcecode"
-        f"&address={address}"
-        f"&apikey={ETHERSCAN_API_KEY}"
+        "?module=contract&action=getsourcecode"
+        f"&address={address}&apikey={ETHERSCAN_API_KEY}"
     )
-
     r = requests.get(url, timeout=10).json()
-
     if r.get("status") != "1":
         return None
-
-    source = r["result"][0].get("SourceCode")
-    return source if source else None
-
+    return r["result"][0].get("SourceCode")
 
 def analyze_source_code(src):
     issues = []
-
     if "require(msg.sender == owner" in src:
-        issues.append("Honeypot: Only owner can transfer tokens")
-
+        issues.append("Honeypot")
     if "allowance[msg.sender][spender] = 0" in src:
-        issues.append("Fake approval mechanism")
-
+        issues.append("Fake approval")
     if "mint(" in src:
-        issues.append("Owner can mint unlimited tokens")
-
+        issues.append("Unlimited mint")
     if "drain(" in src:
-        issues.append("Owner drain / rug pull detected")
-
-    return {
-        "risk": len(issues),
-        "issues": issues
-    }
+        issues.append("Rug pull")
+    return issues
 
 
 if __name__ == "__main__":
