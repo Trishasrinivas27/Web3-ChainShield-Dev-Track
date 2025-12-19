@@ -125,16 +125,45 @@ def scan_contract():
         "issues": issues
     })
 
+# def fetch_source_code(address):
+#     url = (
+#         "https://api-sepolia.etherscan.io/api"
+#         "?module=contract&action=getsourcecode"
+#         f"&address={address}&apikey={ETHERSCAN_API_KEY}"
+#     )
+#     r = requests.get(url, timeout=10).json()
+#     if r.get("status") != "1":
+#         return None
+#     return r["result"][0].get("SourceCode")
+
 def fetch_source_code(address):
     url = (
         "https://api-sepolia.etherscan.io/api"
-        "?module=contract&action=getsourcecode"
-        f"&address={address}&apikey={ETHERSCAN_API_KEY}"
+        "?module=contract"
+        "&action=getsourcecode"
+        f"&address={address}"
+        f"&apikey={ETHERSCAN_API_KEY}"
     )
-    r = requests.get(url, timeout=10).json()
-    if r.get("status") != "1":
+
+    response = requests.get(url, timeout=10).json()
+
+    # ❌ Not verified ONLY if status != 1
+    if response.get("status") != "1":
         return None
-    return r["result"][0].get("SourceCode")
+
+    result = response.get("result", [])
+    if not result:
+        return None
+
+    source = result[0].get("SourceCode", "")
+
+    # ✅ VERY IMPORTANT FIX
+    # Verified contracts may return metadata or JSON
+    if source.strip() == "":
+        return None
+
+    return source
+
 
 def analyze_source_code(src):
     issues = []
