@@ -92,16 +92,15 @@ import requests
 
 app = Flask(__name__)
 
-# 🔥 GLOBAL CORS — Railway & Chrome Extension SAFE
+ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"
+
+# ✅ CORS FIX (GLOBAL – WORKS 100%)
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
-
-
-ETHERSCAN_API_KEY = "A7PXH9D33FMFWPAICU275YJ1FVZDB88YS9"
 
 
 @app.route("/", methods=["GET"])
@@ -109,32 +108,32 @@ def home():
     return jsonify({"status": "Backend running"})
 
 
-# ✅ OPTIONS handler (VERY IMPORTANT)
-@app.route("/scan_contract", methods=["OPTIONS"])
-def scan_contract_options():
-    return "", 200
-
-
-@app.route("/scan_contract", methods=["POST"])
+@app.route("/scan_contract", methods=["POST", "OPTIONS"])
 def scan_contract():
+
+    # ✅ Handle preflight
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+
     data = request.get_json(force=True)
     address = data.get("address")
 
     if not address:
-        return jsonify({"error": "No contract address provided"}), 400
+        return jsonify({
+            "verified": False,
+            "risk": "UNKNOWN",
+            "issues": ["No contract address provided"]
+        })
 
     source = fetch_source_code(address)
 
-    # ❌ NOT VERIFIED
     if source is None:
         return jsonify({
-            "address": address,
             "verified": False,
-            "risk": 0,
-            "issues": []
+            "risk": "UNKNOWN",
+            "issues": ["Contract not verified on Etherscan"]
         })
 
-    # ✅ VERIFIED
     analysis = analyze_source_code(source)
 
     return jsonify({
@@ -154,18 +153,13 @@ def fetch_source_code(address):
         f"&apikey={ETHERSCAN_API_KEY}"
     )
 
-    response = requests.get(url, timeout=10).json()
+    r = requests.get(url, timeout=10).json()
 
-    # ❌ Not verified on Etherscan
-    if response.get("status") != "1":
+    if r.get("status") != "1":
         return None
 
-    source = response["result"][0].get("SourceCode")
-
-    if not source or source.strip() == "":
-        return None
-
-    return source
+    source = r["result"][0].get("SourceCode")
+    return source if source else None
 
 
 def analyze_source_code(src):
