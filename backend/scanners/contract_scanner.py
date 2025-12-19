@@ -87,7 +87,7 @@
 #     app.run(host="0.0.0.0", port=5000)
 
 
-ffrom flask import Flask, request, jsonify
+from flask import Flask, request, jsonify
 import requests
 
 app = Flask(__name__)
